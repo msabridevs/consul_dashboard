@@ -142,21 +142,16 @@
           <option value="">الكل</option>
         </select>
       </label>
-      <label>بحث بالاسم/البريد:
-        <input type="text" id="filter-search" placeholder="ابحث...">
-      </label>
       <button onclick="resetFilters()" style="padding:6px 16px; font-size:16px;">إعادة ضبط</button>
     </div>
     <table id="apps-table">
       <thead>
         <tr>
           <th>رقم الطلب</th>
-          <th>الاسم</th>
           <th>نوع المعاملة</th>
           <th>تاريخ التقديم</th>
           <th>الحالة</th>
           <th>ملاحظات</th>
-          <th>البريد الإلكتروني</th>
           <th>خط زمني للحالة</th>
         </tr>
       </thead>
@@ -177,16 +172,15 @@
     let statusTimeline = {}; // {number: [{date, status}]}
 
     async function fetchApps() {
-      // You can add more fields as needed (phone, etc.)
+      // Query only the columns that exist in your table
       let { data, error } = await supabase
         .from('civil_status')
-        .select('number,name,email,transaction,status,notes,created_at,updated_at');
+        .select('number,transaction,status,notes,created_at,updated_at');
       if (error) {
         alert('خطأ أثناء تحميل البيانات: ' + error.message);
         return;
       }
       allApps = data || [];
-      // Optionally, fetch status history/timeline if you record it in another table
       renderDashboard();
     }
 
@@ -327,7 +321,6 @@
     function resetFilters() {
       document.getElementById('filter-type').value = "";
       document.getElementById('filter-status').value = "";
-      document.getElementById('filter-search').value = "";
       renderAppsTable();
     }
 
@@ -336,27 +329,17 @@
       const tbody = document.querySelector('#apps-table tbody');
       let type = document.getElementById('filter-type').value;
       let status = document.getElementById('filter-status').value;
-      let search = document.getElementById('filter-search').value.trim();
       let filtered = allApps;
       if (type) filtered = filtered.filter(a=>a.transaction===type);
       if (status) filtered = filtered.filter(a=>a.status===status);
-      if (search) {
-        let s = search.toLowerCase();
-        filtered = filtered.filter(a =>
-          (a.name||'').toLowerCase().includes(s) ||
-          (a.email||'').toLowerCase().includes(s)
-        );
-      }
       tbody.innerHTML = filtered.reverse().slice(0, 60).map(a => {
         let created = (a.created_at||'').split('T')[0];
         return `<tr>
           <td>${a.number||''}</td>
-          <td>${a.name||''}</td>
           <td>${a.transaction||''}</td>
           <td>${created||''}</td>
           <td>${a.status||''}</td>
           <td style="max-width:120px;word-break:break-word;">${(a.notes||'').replace(/\n/g,'<br>')}</td>
-          <td>${a.email||''}</td>
           <td>${renderTimeline(a)}</td>
         </tr>`;
       }).join('');
@@ -379,8 +362,7 @@
 
     // ========== EVENT HANDLERS ==========
     document.getElementById('filter-type').onchange =
-    document.getElementById('filter-status').onchange =
-    document.getElementById('filter-search').oninput = renderAppsTable;
+    document.getElementById('filter-status').onchange = renderAppsTable;
 
     // ========== INITIAL LOAD ==========
     fetchApps();
