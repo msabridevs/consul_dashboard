@@ -94,6 +94,24 @@
     .timeline .event {
       margin-bottom: 6px;
     }
+    .status-table-stats {
+      border-collapse: collapse;
+      width: 100%;
+      background: #fff;
+      margin-bottom: 20px;
+      font-size: 15px;
+    }
+    .status-table-stats th, .status-table-stats td {
+      padding: 8px 12px;
+      border: 1px solid #e1e1e1;
+      text-align: right;
+    }
+    .status-table-stats th {
+      background: #e8f4fa;
+    }
+    .status-table-stats tr:nth-child(even) td {
+      background: #f6fafd;
+    }
     @media (max-width: 900px) {
       .stats-cards, .charts-row {
         flex-direction: column;
@@ -119,8 +137,9 @@
       <canvas id="typeChart"></canvas>
     </div>
     <div class="chart-panel">
-      <h3>توزيع الطلبات حسب الحالة</h3>
-      <canvas id="statusChart"></canvas>
+      <h3>إحصائيات تفصيلية حسب الحالات</h3>
+      <div id="statusStats"></div>
+      <canvas id="statusTrendChart"></canvas>
     </div>
     <div class="chart-panel">
       <h3>عدد الطلبات الجديدة حسب اليوم</h3>
@@ -171,7 +190,6 @@
     let allApps = [];
 
     async function fetchApps() {
-      // Query the columns that exist in your table
       let { data, error } = await supabase
         .from('civil_status')
         .select('id,created_at,number,status,notes,transaction');
@@ -187,7 +205,8 @@
     function renderDashboard() {
       renderStatsCards();
       renderTypeChart();
-      renderStatusChart();
+      renderStatusStatsTable();
+      renderStatusTrendChart();
       renderTrendChart();
       renderFilters();
       renderAppsTable();
@@ -201,6 +220,8 @@
       const doneCount = allApps.filter(a => (a.status||'').includes("تم الإرسال")).length;
       const pendingCount = allApps.filter(a => (a.status||'').includes("جارى مراجعة")).length;
       const needsActionCount = allApps.filter(a => a.status==="مطلوب استيفاء").length;
+      const receivedCount = allApps.filter(a => (a.status||'').includes("وردت المعاملة")).length;
+
       const cardHTML = `
         <div class="stat-card">
           <h3>الكل</h3>
@@ -218,9 +239,14 @@
           <div>طلبات جارية</div>
         </div>
         <div class="stat-card">
-          <h3>تم الإرسال</h3>
+          <h3>تم الإرسال بالبريد</h3>
           <div style="font-size: 30px; font-weight: bold;">${doneCount}</div>
           <div>طلبات أُرسلت</div>
+        </div>
+        <div class="stat-card">
+          <h3>وردت المعاملة</h3>
+          <div style="font-size: 30px; font-weight: bold;">${receivedCount}</div>
+          <div>طلبات جاهزة للاستلام</div>
         </div>
         <div class="stat-card">
           <h3>مطلوب استيفاء</h3>
@@ -250,24 +276,87 @@
         options: { responsive: true }
       });
     }
-    function renderStatusChart() {
-      const ctx = document.getElementById('statusChart').getContext('2d');
+
+    // ======= ADVANCED STATUS TABLE =======
+    function renderStatusStatsTable() {
+      // Aggregate all unique statuses
       const statusCounts = {};
+      const statusDaily = {};
+      const today = (new Date()).toISOString().split('T')[0];
       allApps.forEach(a => {
-        statusCounts[a.status] = (statusCounts[a.status]||0) + 1;
+        const st = a.status || "غير محدد";
+        statusCounts[st] = (statusCounts[st]||0) + 1;
+        // for today count
+        const d = (a.created_at||'').split('T')[0];
+        if (d === today) statusDaily[st] = (statusDaily[st]||0)+1;
       });
-      const labels = Object.keys(statusCounts);
-      const data = Object.values(statusCounts);
-      if (window.statusChartObj) window.statusChartObj.destroy();
-      window.statusChartObj = new Chart(ctx, {
-        type: 'bar',
+
+      // Table header
+      let html = `<table class="status-table-stats"><thead><tr>
+        <th>الحالة</th>
+        <th>عدد الطلبات</th>
+        <th>نسبة مئوية</th>
+        <th>طلبات جديدة اليوم</th>
+      </tr></thead><tbody>`;
+
+      const total = allApps.length;
+      Object.keys(statusCounts).forEach(st => {
+        const count = statusCounts[st];
+        const percent = total ? ((count/total)*100).toFixed(1) : 0;
+        const todayCount = statusDaily[st]||0;
+        html += `<tr>
+          <td>${st}</td>
+          <td>${count}</td>
+          <td>${percent}%</td>
+          <td>${todayCount}</td>
+        </tr>`;
+      });
+      html += "</tbody></table>";
+      document.getElementById("statusStats").innerHTML = html;
+    }
+
+    // ======= STATUS TREND CHART ==========
+    function renderStatusTrendChart() {
+      const ctx = document.getElementById('statusTrendChart').getContext('2d');
+      // Build trend by date x status
+      const dateStatusCounts = {};
+      const statusSet = new Set();
+      allApps.forEach(a => {
+        const d = (a.created_at||'').split('T')[0];
+        const st = a.status || "غير محدد";
+        if (!d) return;
+        if (!dateStatusCounts[d]) dateStatusCounts[d] = {};
+        dateStatusCounts[d][st] = (dateStatusCounts[d][st]||0)+1;
+        statusSet.add(st);
+      });
+      const sortedDates = Object.keys(dateStatusCounts).sort();
+      const statuses = Array.from(statusSet);
+      // Prepare dataset
+      const datasets = statuses.map((st,i) => ({
+        label: st,
+        data: sortedDates.map(d=>dateStatusCounts[d][st]||0),
+        backgroundColor: genColors(statuses.length)[i],
+        borderColor: genColors(statuses.length)[i],
+        fill: false,
+        tension: 0.2
+      }));
+
+      if (window.statusTrendChartObj) window.statusTrendChartObj.destroy();
+      window.statusTrendChartObj = new Chart(ctx, {
+        type: 'line',
         data: {
-          labels,
-          datasets: [{data, backgroundColor: genColors(data.length)}]
+          labels: sortedDates,
+          datasets: datasets
         },
-        options: { responsive: true }
+        options: {
+          responsive:true,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
       });
     }
+
     function renderTrendChart() {
       const ctx = document.getElementById('trendChart').getContext('2d');
       // Group by date
@@ -346,7 +435,6 @@
 
     // ========== STATUS TIMELINE (PER APPLICATION) ==========
     function renderTimeline(app) {
-      // For demo, just show created_at and latest status.
       let events = [];
       if (app.created_at) events.push({date: app.created_at.split('T')[0], status: 'تقديم الطلب'});
       if (app.status)
