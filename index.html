@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>لوحة متابعة الطلبات القنصلية</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      direction: rtl;
+      text-align: right;
+      padding: 20px;
+      background: #f8fafd;
+      color: #222;
+    }
+    h2, h3 {
+      margin: 0 0 10px 0;
+    }
+    .stats-cards {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px #00000010;
+      padding: 20px 30px;
+      min-width: 180px;
+      flex: 1 1 180px;
+      text-align: center;
+    }
+    .charts-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+    .chart-panel {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px #00000010;
+      padding: 16px;
+      flex: 1 1 320px;
+      min-width: 320px;
+    }
+    .table-responsive {
+      overflow-x: auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px #00000010;
+      padding: 16px;
+      margin-bottom: 32px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 16px;
+    }
+    th, td {
+      border: 1px solid #e6e6e6;
+      padding: 8px 12px;
+      text-align: right;
+    }
+    th {
+      background: #f0f0f6;
+    }
+    tr:nth-child(even) td {
+      background: #fafafb;
+    }
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    select, input[type="text"] {
+      padding: 6px 10px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: 1px solid #bbb;
+      min-width: 120px;
+      margin-bottom: 0;
+    }
+    .timeline {
+      margin-top: 10px;
+      font-size: 15px;
+      color: #444;
+    }
+    .timeline .event {
+      margin-bottom: 6px;
+    }
+    @media (max-width: 900px) {
+      .stats-cards, .charts-row {
+        flex-direction: column;
+      }
+      .chart-panel {
+        min-width: 200px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h2>لوحة متابعة الطلبات القنصلية - للقنصل</h2>
+
+  <!-- STAT CARDS -->
+  <div class="stats-cards" id="stats-cards">
+    <!-- Populated dynamically -->
+  </div>
+
+  <!-- CHARTS -->
+  <div class="charts-row">
+    <div class="chart-panel">
+      <h3>توزيع الطلبات حسب نوع المعاملة</h3>
+      <canvas id="typeChart"></canvas>
+    </div>
+    <div class="chart-panel">
+      <h3>توزيع الطلبات حسب الحالة</h3>
+      <canvas id="statusChart"></canvas>
+    </div>
+    <div class="chart-panel">
+      <h3>عدد الطلبات الجديدة حسب اليوم</h3>
+      <canvas id="trendChart"></canvas>
+    </div>
+  </div>
+
+  <!-- RECENT APPLICATIONS TABLE -->
+  <div class="table-responsive">
+    <h3>قائمة الطلبات الحديثة</h3>
+    <div class="filter-bar">
+      <label>نوع المعاملة:
+        <select id="filter-type">
+          <option value="">الكل</option>
+        </select>
+      </label>
+      <label>الحالة:
+        <select id="filter-status">
+          <option value="">الكل</option>
+        </select>
+      </label>
+      <label>بحث بالاسم/البريد:
+        <input type="text" id="filter-search" placeholder="ابحث...">
+      </label>
+      <button onclick="resetFilters()" style="padding:6px 16px; font-size:16px;">إعادة ضبط</button>
+    </div>
+    <table id="apps-table">
+      <thead>
+        <tr>
+          <th>رقم الطلب</th>
+          <th>الاسم</th>
+          <th>نوع المعاملة</th>
+          <th>تاريخ التقديم</th>
+          <th>الحالة</th>
+          <th>ملاحظات</th>
+          <th>البريد الإلكتروني</th>
+          <th>خط زمني للحالة</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Populated dynamically -->
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // ========= CONFIG =========
+    const SUPABASE_URL = 'https://esbgozuigjdavcxiaxon.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzYmdvenVpZ2pkYXZjeGlheG9uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyMjU4NzUsImV4cCI6MjA1OTgwMTg3NX0.OiOH_0ZcTUPu6oMGILsq5oqm1FdCDBvzcHozs-4DNY0';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ========= LOAD & PROCESS DATA =========
+    let allApps = [];
+    let statusTimeline = {}; // {number: [{date, status}]}
+
+    async function fetchApps() {
+      // You can add more fields as needed (phone, etc.)
+      let { data, error } = await supabase
+        .from('civil_status')
+        .select('number,name,email,transaction,status,notes,created_at,updated_at');
+      if (error) {
+        alert('خطأ أثناء تحميل البيانات: ' + error.message);
+        return;
+      }
+      allApps = data || [];
+      // Optionally, fetch status history/timeline if you record it in another table
+      renderDashboard();
+    }
+
+    // ========== DASHBOARD MAIN RENDER ==========
+    function renderDashboard() {
+      renderStatsCards();
+      renderTypeChart();
+      renderStatusChart();
+      renderTrendChart();
+      renderFilters();
+      renderAppsTable();
+    }
+
+    // ========== STATS CARDS ==========
+    function renderStatsCards() {
+      const total = allApps.length;
+      const today = (new Date()).toISOString().split('T')[0];
+      const todayCount = allApps.filter(a => a.created_at?.split('T')[0] === today).length;
+      const doneCount = allApps.filter(a => (a.status||'').includes("تم الإرسال")).length;
+      const pendingCount = allApps.filter(a => (a.status||'').includes("جارى مراجعة")).length;
+      const needsActionCount = allApps.filter(a => a.status==="مطلوب استيفاء").length;
+      const cardHTML = `
+        <div class="stat-card">
+          <h3>الكل</h3>
+          <div style="font-size: 30px; font-weight: bold;">${total}</div>
+          <div>إجمالي الطلبات</div>
+        </div>
+        <div class="stat-card">
+          <h3>اليوم</h3>
+          <div style="font-size: 30px; font-weight: bold;">${todayCount}</div>
+          <div>طلبات جديدة اليوم</div>
+        </div>
+        <div class="stat-card">
+          <h3>قيد المراجعة</h3>
+          <div style="font-size: 30px; font-weight: bold;">${pendingCount}</div>
+          <div>طلبات جارية</div>
+        </div>
+        <div class="stat-card">
+          <h3>تم الإرسال</h3>
+          <div style="font-size: 30px; font-weight: bold;">${doneCount}</div>
+          <div>طلبات أُرسلت</div>
+        </div>
+        <div class="stat-card">
+          <h3>مطلوب استيفاء</h3>
+          <div style="font-size: 30px; font-weight: bold;">${needsActionCount}</div>
+          <div>ينقصها بيانات</div>
+        </div>
+      `;
+      document.getElementById('stats-cards').innerHTML = cardHTML;
+    }
+
+    // ========== CHARTS ==========
+    function renderTypeChart() {
+      const ctx = document.getElementById('typeChart').getContext('2d');
+      const typeCounts = {};
+      allApps.forEach(a => {
+        typeCounts[a.transaction] = (typeCounts[a.transaction]||0) + 1;
+      });
+      const labels = Object.keys(typeCounts);
+      const data = Object.values(typeCounts);
+      if (window.typeChartObj) window.typeChartObj.destroy();
+      window.typeChartObj = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels,
+          datasets: [{data, backgroundColor: genColors(data.length)}]
+        },
+        options: { responsive: true }
+      });
+    }
+    function renderStatusChart() {
+      const ctx = document.getElementById('statusChart').getContext('2d');
+      const statusCounts = {};
+      allApps.forEach(a => {
+        statusCounts[a.status] = (statusCounts[a.status]||0) + 1;
+      });
+      const labels = Object.keys(statusCounts);
+      const data = Object.values(statusCounts);
+      if (window.statusChartObj) window.statusChartObj.destroy();
+      window.statusChartObj = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{data, backgroundColor: genColors(data.length)}]
+        },
+        options: { responsive: true }
+      });
+    }
+    function renderTrendChart() {
+      const ctx = document.getElementById('trendChart').getContext('2d');
+      // Group by date
+      const dateCounts = {};
+      allApps.forEach(a => {
+        const d = (a.created_at||'').split('T')[0];
+        if (!d) return;
+        dateCounts[d] = (dateCounts[d]||0)+1;
+      });
+      const sortedDates = Object.keys(dateCounts).sort();
+      const data = sortedDates.map(d => dateCounts[d]);
+      if (window.trendChartObj) window.trendChartObj.destroy();
+      window.trendChartObj = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: sortedDates,
+          datasets: [{
+            label: 'طلبات جديدة',
+            data,
+            backgroundColor: 'rgba(54, 162, 235, 0.25)',
+            borderColor: 'rgba(54, 162, 235, 0.8)',
+            fill: true
+          }]
+        },
+        options: { responsive: true }
+      });
+    }
+    function genColors(n) {
+      // Generate n visually distinct colors
+      const base = [
+        '#2c7be5','#51cf66','#ff922b','#e64980','#845ef7','#15aabf','#fab005','#d6336c','#5f3dc4','#40c057'
+      ];
+      return Array.from({length:n},(v,i)=>base[i%base.length]);
+    }
+
+    // ========== FILTERS ==========
+    function renderFilters() {
+      // Transaction types
+      const types = Array.from(new Set(allApps.map(a=>a.transaction))).filter(Boolean);
+      types.sort();
+      document.getElementById('filter-type').innerHTML =
+        `<option value="">الكل</option>`+types.map(t=>`<option>${t}</option>`).join('');
+      // Statuses
+      const statuses = Array.from(new Set(allApps.map(a=>a.status))).filter(Boolean);
+      statuses.sort();
+      document.getElementById('filter-status').innerHTML =
+        `<option value="">الكل</option>`+statuses.map(s=>`<option>${s}</option>`).join('');
+    }
+
+    function resetFilters() {
+      document.getElementById('filter-type').value = "";
+      document.getElementById('filter-status').value = "";
+      document.getElementById('filter-search').value = "";
+      renderAppsTable();
+    }
+
+    // ========== TABLE OF APPLICATIONS ==========
+    function renderAppsTable() {
+      const tbody = document.querySelector('#apps-table tbody');
+      let type = document.getElementById('filter-type').value;
+      let status = document.getElementById('filter-status').value;
+      let search = document.getElementById('filter-search').value.trim();
+      let filtered = allApps;
+      if (type) filtered = filtered.filter(a=>a.transaction===type);
+      if (status) filtered = filtered.filter(a=>a.status===status);
+      if (search) {
+        let s = search.toLowerCase();
+        filtered = filtered.filter(a =>
+          (a.name||'').toLowerCase().includes(s) ||
+          (a.email||'').toLowerCase().includes(s)
+        );
+      }
+      tbody.innerHTML = filtered.reverse().slice(0, 60).map(a => {
+        let created = (a.created_at||'').split('T')[0];
+        return `<tr>
+          <td>${a.number||''}</td>
+          <td>${a.name||''}</td>
+          <td>${a.transaction||''}</td>
+          <td>${created||''}</td>
+          <td>${a.status||''}</td>
+          <td style="max-width:120px;word-break:break-word;">${(a.notes||'').replace(/\n/g,'<br>')}</td>
+          <td>${a.email||''}</td>
+          <td>${renderTimeline(a)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ========== STATUS TIMELINE (PER APPLICATION) ==========
+    function renderTimeline(app) {
+      // For demo, just show created_at and latest status.
+      // If you have a status history table, you can fetch and display all events.
+      let events = [];
+      if (app.created_at) events.push({date: app.created_at.split('T')[0], status: 'تقديم الطلب'});
+      if (app.updated_at && app.updated_at !== app.created_at)
+        events.push({date: app.updated_at.split('T')[0], status: app.status});
+      else if (app.status)
+        events.push({date: '', status: app.status});
+      return `<div class="timeline">` + events.map(ev =>
+        `<div class="event">${ev.date ? `<b>${ev.date}</b>: ` : ''}${ev.status}</div>`
+      ).join('') + `</div>`;
+    }
+
+    // ========== EVENT HANDLERS ==========
+    document.getElementById('filter-type').onchange =
+    document.getElementById('filter-status').onchange =
+    document.getElementById('filter-search').oninput = renderAppsTable;
+
+    // ========== INITIAL LOAD ==========
+    fetchApps();
+  </script>
+</body>
+</html>
