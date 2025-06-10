@@ -78,7 +78,7 @@
       margin-bottom: 10px;
       flex-wrap: wrap;
     }
-    select, input[type="text"] {
+    select {
       padding: 6px 10px;
       font-size: 16px;
       border-radius: 6px;
@@ -169,13 +169,12 @@
 
     // ========= LOAD & PROCESS DATA =========
     let allApps = [];
-    let statusTimeline = {}; // {number: [{date, status}]}
 
     async function fetchApps() {
-      // Query only the columns that exist in your table
+      // Query the columns that exist in your table
       let { data, error } = await supabase
         .from('civil_status')
-        .select('number,transaction,status,notes,created_at,updated_at');
+        .select('id,created_at,number,status,notes,transaction');
       if (error) {
         alert('خطأ أثناء تحميل البيانات: ' + error.message);
         return;
@@ -348,12 +347,9 @@
     // ========== STATUS TIMELINE (PER APPLICATION) ==========
     function renderTimeline(app) {
       // For demo, just show created_at and latest status.
-      // If you have a status history table, you can fetch and display all events.
       let events = [];
       if (app.created_at) events.push({date: app.created_at.split('T')[0], status: 'تقديم الطلب'});
-      if (app.updated_at && app.updated_at !== app.created_at)
-        events.push({date: app.updated_at.split('T')[0], status: app.status});
-      else if (app.status)
+      if (app.status)
         events.push({date: '', status: app.status});
       return `<div class="timeline">` + events.map(ev =>
         `<div class="event">${ev.date ? `<b>${ev.date}</b>: ` : ''}${ev.status}</div>`
